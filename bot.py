@@ -1,29 +1,41 @@
 import pandas as pd
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import os
 
+# Carrega planilha
 df = pd.read_excel("produtos.xlsx", sheet_name="Produtos")
+df.columns = df.columns.str.strip().str.lower()  # padroniza colunas para minúsculas sem espaços
 df['codigo'] = df['codigo'].astype(str)
 
-async def buscar_preco(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Uso: /codigo <código do produto>")
-        return
+# Função principal
+async def buscar_codigos(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    texto = update.message.text.replace("/", "").strip()
+    codigos = [codigo.strip() for codigo in texto.split(',') if codigo.strip()]
+    
+    respostas = []
+    for codigo in codigos:
+        resultado = df[df['codigo'] == codigo]
+        
+        if resultado.empty:
+            respostas.append(f"Poxa, não encontramos o item com código {codigo}. Por favor, valide com o vendedor.")
+        else:
+            produto = resultado.iloc[0]
+            nome = produto['descricao']
+            atacado = produto['a']
+            varejo = produto['v']
+            respostas.append(
+                f"Produto: {nome}\n"
+                f"CODIGO: {codigo}\n"
+                f"Preço atacado: R$ {atacado:.2f}\n"
+                f"Preço varejo: R$ {varejo:.2f}"
+            )
+    
+    await update.message.reply_text("\n\n".join(respostas))
 
-    codigo = context.args[0]
-    resultado = df[df['codigo'] == codigo]
-
-    if resultado.empty:
-        await update.message.reply_text(f"Código {codigo} não encontrado.")
-    else:
-        nome = resultado.iloc[0]['descricao']
-        preco = resultado.iloc[0]['preco']
-        await update.message.reply_text(f"Produto: {nome}\nPreço: R$ {preco:.2f}")
-
-# Token do bot vindo do Railway (como variável de ambiente)
+# Inicialização
 TOKEN = os.environ['TELEGRAM_BOT_TOKEN']
-
 app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("codigo", buscar_preco))
+app.add_handler(CommandHandler("codigo", buscar_codigos))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, buscar_codigos))
 app.run_polling()
